@@ -4,4 +4,5 @@
 .httr-oauth
 .DS_Store
 
+# ignore local folder with massive SQL databases
 /ignore

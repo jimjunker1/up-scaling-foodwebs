@@ -9,6 +9,7 @@ dat = read.csv("./data/divers_prod_hab.csv") %>%
   dplyr::rename(prod = 'production_sum_mean', habH = 'shannon_habitat',
                 bioH_richness = 'RICHNESS', bioH_shannon = 'SHANNON_B',
                 bioH_simpson = 'SIMPSON_B', bioH_evenness = 'EVENNESS_B', is = 'median_nolog', sediment_size = 'seg_weighted_size') %>% 
+  # scale the variables because production is on a vastly different scale than rest
   dplyr::mutate(across(c(prod, habH,bioH_richness, bioH_shannon, bioH_simpson, bioH_evenness, sediment_size, is), ~as.numeric(scale(.x)), .names = "{.col}_scaled")) %>% 
   dplyr::select(prod, prod_scaled, habH, habH_scaled, bioH_richness, bioH_richness_scaled, bioH_shannon, bioH_shannon_scaled, bioH_simpson, bioH_simpson_scaled, bioH_evenness, bioH_evenness_scaled,sediment_size, sediment_size_scaled, is, is_scaled)
 
@@ -28,13 +29,13 @@ bioH_shannon_scaled ~ 1 + habH_scaled + sediment_size_scaled
 ## simpson
 model_cfa_simpson <- '
 is_scaled ~ 1+bioH_simpson_scaled + prod_scaled
-prod_scaled ~ 1+bioH_simpson_scaled + habH_scaled
+prod_scaled ~ 1+bioH_simpson_scaled + habH_scaled + sediment_size_scaled
 bioH_simpson_scaled ~ 1+habH_scaled +sediment_size_scaled
 '
 ## evenness
 model_cfa_evenness <- '
 is_scaled ~ 1+bioH_evenness_scaled + prod_scaled
-prod_scaled ~ 1+bioH_evenness_scaled + habH_scaled
+prod_scaled ~ 1+bioH_evenness_scaled + habH_scaled + sediment_size_scaled
 bioH_evenness_scaled ~ 1+habH_scaled+ sediment_size_scaled
 '
 # fit cfa
@@ -91,7 +92,6 @@ AIC(fit_sem_shannon_scaled, fit_sem_simpson_scaled, fit_sem_evenness_scaled)
 # Get estimates of confidence intervals
 parameterestimates(fit_sem_simpson_scaled)
 
-
 # piecewiseSEM ----
 # using piecewiseSEM to do CFA allowing for different data distributions!
 
@@ -102,18 +102,10 @@ plot(dat$habH_scaled, dat$bioH_shannon_scaled)
 # plot(lm(bioH_shannon_scaled ~ habH_scaled, data = dat))
 
 # fitting piecewise 
-model_psem_shannon <- psem(
-  glm(is ~ prod + bioH_shannon, family = gaussian(link = 'log'), data = dat),
-  glm(prod ~ habH + bioH_shannon, family = gaussian(link = 'log'), data = dat),
-  lm(bioH_shannon ~ habH, data = dat),
-  data = dat)
-
-summary(model_psem_shannon)
-
 model_psem_shannon_scaled <- psem(
-  glm(is_scaled ~ prod_scaled + bioH_shannon_scaled, family = gaussian(link = "identity"), data = dat),
-  lm(prod_scaled ~ habH_scaled + bioH_shannon_scaled + sediment_size_scaled, data = dat),
-  lm(bioH_shannon_scaled ~ habH_scaled+ sediment_size_scaled, data = dat),
+  glm(is_scaled ~ prod_scaled + bioH_shannon_scaled, family = gaussian(link = 'identity'), data = dat),
+  glm(prod_scaled ~ habH_scaled + bioH_shannon_scaled + sediment_size_scaled, family= gaussian(link = 'identity'), data = dat),
+  glm(bioH_shannon_scaled ~ habH_scaled+ sediment_size_scaled, family = gaussian(link = 'identity'), data = dat),
   data = dat)
 
 summary(model_psem_shannon_scaled)
@@ -121,7 +113,7 @@ summary(model_psem_shannon_scaled)
 model_psem_simpson_scaled <- psem(
   glm(is_scaled ~ prod_scaled + bioH_simpson_scaled, family = gaussian(link = "identity"), data = dat),
   glm(prod_scaled ~ bioH_simpson_scaled + habH_scaled+ sediment_size_scaled, family = gaussian(link = "identity"), data = dat),
-  lm(bioH_simpson_scaled ~ habH_scaled + sediment_size_scaled, data = dat),
+  glm(bioH_simpson_scaled ~ habH_scaled + sediment_size_scaled, family = gaussian(link = 'identity'), data = dat),
   data = dat)
 
 summary(model_psem_simpson_scaled)
@@ -139,11 +131,12 @@ model_psem_simpson_scaled_gam <- psem(
 
 summary(model_psem_simpson_scaled_gam)
 
-model_psem_evenness_scaled_gam <- psem(
+model_psem_evenness_scaled <- psem(
   glm(is_scaled ~ prod_scaled + bioH_evenness_scaled, family = gaussian(link = "identity"), data = dat),
-  glm(prod_scaled ~ habH_scaled + bioH_evenness_scaled, family = gaussian(link = "identity"), data = dat),
-  lm(bioH_evenness_scaled ~ habH_scaled, data = dat),
+  glm(prod_scaled ~ habH_scaled + bioH_evenness_scaled + sediment_size_scaled, family = gaussian(link = "identity"), data = dat),
+  glm(bioH_evenness_scaled ~ habH_scaled + sediment_size_scaled, family = gaussian(link = "identity"), data = dat),
   data = dat)
+summary(model_psem_evenness_scaled)
 
 model_psem_richness_scaled <- psem(
   glm(is_scaled ~ prod_scaled + bioH_richness_scaled, family = gaussian(link = "identity"), data = dat),
