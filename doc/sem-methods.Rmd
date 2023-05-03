@@ -1,0 +1,97 @@
+---
+title: "Methods for SEM methods section"
+author: 
+output:
+   word_document:
+      reference_docx: working_docx_template.docx
+      toc: no
+      pandoc_args:
+      - '--lua-filter=scholarly-metadata.lua'
+      - '--lua-filter=author-info-blocks.lua'
+      - '--filter=pandoc-crossref.exe'
+   pdf_document:
+     keep_tex: true
+   html_document: default
+   pandoc_args:
+      - '--lua-filter=scholarly-metadata.lua'
+      - '--lua-filter=author-info-blocks.lua'
+      - '--filter=pandoc-crossref.exe'
+header-includes:
+- \usepackage{lineno}
+- \usepackage{amsmath}
+- \numberwithin{equation}
+- \usepackage{indentfirst}
+- \linenumbers
+indent: true
+linestretch: 1
+bibliography: refs.bib
+link-citations: no
+link-color: grey
+csl: ecology.csl
+---
+
+```{r import general objects, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# read in the path analysis model syntax
+source("habitat-model-specs.R")
+library(knitr)
+library(tidyverse)
+library(lavaan)
+## load the data ----
+dat = read.csv("./data/divers_prod_hab.csv") %>% 
+  dplyr::rename(prod = 'production_sum_mean', habH = 'shannon_habitat',
+                bioH_richness = 'RICHNESS', bioH_shannon = 'SHANNON_B',
+                bioH_simpson = 'SIMPSON_B', bioH_evenness = 'EVENNESS_B', is = 'median_nolog', sediment_size = 'seg_weighted_size') %>% 
+  # scale the variables because production is on a vastly different scale than rest
+  dplyr::mutate(across(c(prod, habH,bioH_richness, bioH_shannon, bioH_simpson, bioH_evenness, sediment_size, is), ~as.numeric(scale(.x)), .names = "{.col}_scaled")) %>% 
+  dplyr::select(prod, prod_scaled, habH, habH_scaled, bioH_richness, bioH_richness_scaled, bioH_shannon, bioH_shannon_scaled, bioH_simpson, bioH_simpson_scaled, bioH_evenness, bioH_evenness_scaled,sediment_size, sediment_size_scaled, is, is_scaled)
+
+# SEMs ----
+# fit with full path analysis/sems
+model_latentBioH_scaled <-'
+# set out the model structure
+# the full model of interaction strengths
+# IS is influenced by production and diversity
+
+is_scaled ~ prod_scaled + bioH_scaled
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity and sediment size
+
+prod_scaled ~ habH_scaled + bioH_scaled+ sediment_size_scaled
+
+# OTOH, biodiversity is influenced by habitat Diversity and sediment size
+
+bioH_scaled ~ habH_scaled + sediment_size_scaled
+
+sediment_size_scaled ~ habH_scaled
+
+## identify the latent variables
+
+bioH_scaled =~ bioH_shannon_scaled + bioH_richness_scaled + bioH_evenness_scaled
+'
+
+### models with latent variable for biodiversity (richness, shannon, evenness)
+# sem model 
+fit_sem_bioH_scaled <- sem(model_latentBioH_scaled, data = dat, auto.var = TRUE)
+
+# extract the relevant summary stats from the fitted models
+# summary(fit_sem_bioH_scaled,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+
+
+# estimate the standardized coefficients
+# standardizedsolution(fit_sem_bioH_scaled)
+```
+<!--- Title page details --->
+
+We proposed habitat diversity would modulate food web module interaction strengths through its effects on prey resource diversity and production. To quantify this effect, as well as the relative importance of prey diversity and production on interaction strengths, we needed to account for the variety of direct and indirect pathways that habitat diversity influences prey resource diversity and secondary production. Therefore, we used structural equation models [SEM, @grace; @shipley] to examine the multiple causal pathways (Fig. 1) while accounting for the correlation between the multiple variables. We hypothesized habitat diversity, measured by Shannon-Weiner entropy, would influence both the Models were fit using the `lavaan` package [ver. 0.6-15, @rosseel2012]. 
+
+
+```{r standard table}
+knitr::kable(standardizedsolution(fit_sem_bioH_scaled), digits = 3)
+
+```
+
+# References
+
+<div id="refs"></div>
