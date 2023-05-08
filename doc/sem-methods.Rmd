@@ -37,61 +37,149 @@ source("habitat-model-specs.R")
 library(knitr)
 library(tidyverse)
 library(lavaan)
+library(MASS)
 ## load the data ----
 dat = read.csv("./data/divers_prod_hab.csv") %>% 
+  dplyr::mutate(production_sum_mean = (production_sum_mean/1000),
+                seg_weighted_size = (seg_weighted_size/10),
+                log_prod = log10(production_sum_mean),
+                is10 = median_nolog*10) %>% 
   dplyr::rename(prod = 'production_sum_mean', habH = 'shannon_habitat',
                 bioH_richness = 'RICHNESS', bioH_shannon = 'SHANNON_B',
                 bioH_simpson = 'SIMPSON_B', bioH_evenness = 'EVENNESS_B', is = 'median_nolog', sediment_size = 'seg_weighted_size') %>% 
   # scale the variables because production is on a vastly different scale than rest
-  dplyr::mutate(across(c(prod, habH,bioH_richness, bioH_shannon, bioH_simpson, bioH_evenness, sediment_size, is), ~as.numeric(scale(.x)), .names = "{.col}_scaled")) %>% 
-  dplyr::select(prod, prod_scaled, habH, habH_scaled, bioH_richness, bioH_richness_scaled, bioH_shannon, bioH_shannon_scaled, bioH_simpson, bioH_simpson_scaled, bioH_evenness, bioH_evenness_scaled,sediment_size, sediment_size_scaled, is, is_scaled)
+  dplyr::mutate(across(c(prod, habH, bioH_richness, bioH_shannon, bioH_simpson, bioH_evenness, sediment_size, is), ~as.numeric(scale(.x)), .names = "{.col}_scaled")) %>%
+  dplyr::mutate(d0 = bioH_richness,
+                d1 = exp(bioH_shannon),
+                d2 = 1/bioH_simpson) %>% 
+  dplyr::select(log_prod, prod, prod_scaled, habH,habH_scaled, bioH_richness, bioH_richness_scaled, bioH_shannon, bioH_shannon_scaled, bioH_simpson, bioH_simpson_scaled, bioH_evenness, bioH_evenness_scaled,sediment_size, sediment_size_scaled, is, is10, is_scaled, d0, d1, d2)
+
 
 # SEMs ----
 # fit with full path analysis/sems
-model_latentBioH_scaled <-'
-# set out the model structure
+## shannon
+model_sem_shannon <-'
 # the full model of interaction strengths
-# IS is influenced by production and diversity
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
 
-is_scaled ~ prod_scaled + bioH_scaled
+is_scaled ~ log_prod + bioH_shannon
 
 # here prod itself has dependence on habitat Diversity
-# and biodiversity and sediment size
+# and biodiversity
 
-prod_scaled ~ habH_scaled + bioH_scaled+ sediment_size_scaled
+log_prod ~ habH + bioH_shannon + sediment_size
 
-# OTOH, biodiversity is influenced by habitat Diversity and sediment size
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
 
-bioH_scaled ~ habH_scaled + sediment_size_scaled
+bioH_shannon ~ habH + sediment_size
 
-sediment_size_scaled ~ habH_scaled
+sediment_size ~ habH
+'
+fit_sem_bioH_shannon <- sem(model_sem_shannon, data = dat, auto.var = TRUE)
+fit_sem_bioH_shannon_summ = summary(fit_sem_bioH_shannon,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_shannon_stand = standardizedsolution(fit_sem_bioH_shannon)
+## simpson
+model_sem_simpson <-'
+# the full model of interaction strengths
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
+
+is_scaled ~ log_prod + bioH_simpson
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH_simpson + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH_simpson ~ habH + sediment_size
+
+sediment_size ~ habH
+'
+fit_sem_bioH_simpson <- sem(model_sem_simpson, data = dat, auto.var = TRUE)
+fit_sem_bioH_simpson_summ = summary(fit_sem_bioH_simpson,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_simpson_stand = standardizedsolution(fit_sem_bioH_simpson)
+## richness
+model_sem_richness <-'
+# the full model of interaction strengths
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
+
+is_scaled ~ log_prod + bioH_richness
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH_richness + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH_richness ~ habH + sediment_size
+
+sediment_size ~ habH
+'
+fit_sem_bioH_richness <- sem(model_sem_richness, data = dat, auto.var = TRUE)
+fit_sem_bioH_richness_summ = summary(fit_sem_bioH_richness,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_richness_stand = standardizedsolution(fit_sem_bioH_richness)
+## latent variable for biodiversity
+model_latentBio_simple <-'
+# the full model of interaction strengths
+# is_scaled is_scaled influenced by production and diversity
+
+is_scaled ~ log_prod + bioH
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH ~ habH + sediment_size
+
+sediment_size ~ habH
 
 ## identify the latent variables
 
-bioH_scaled =~ bioH_shannon_scaled + bioH_richness_scaled + bioH_evenness_scaled
+bioH =~ bioH_shannon_scaled + bioH_richness_scaled + bioH_simpson_scaled
+
+## covariances
+bioH_shannon_scaled ~~ bioH_richness_scaled
+# bioH_shannon_scaled ~~ bioH_simpson_scaled
+bioH_richness_scaled ~~ bioH_simpson_scaled
 '
+fit_sem_bioH_simple <- sem(model_latentBio_simple, data = dat, auto.var = TRUE)
 
-### models with latent variable for biodiversity (richness, shannon, evenness)
-# sem model 
-fit_sem_bioH_scaled <- sem(model_latentBioH_scaled, data = dat, auto.var = TRUE)
+fit_sem_summ = summary(fit_sem_bioH_simple, fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
 
-# extract the relevant summary stats from the fitted models
-# summary(fit_sem_bioH_scaled,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
-
-
-# estimate the standardized coefficients
-# standardizedsolution(fit_sem_bioH_scaled)
+fit_sem_bioH_stand = standardizedsolution(fit_sem_bioH_simple)
 ```
 <!--- Title page details --->
 
-We proposed habitat diversity would modulate food web module interaction strengths through its effects on prey resource diversity and production. To quantify this effect, as well as the relative importance of prey diversity and production on interaction strengths, we needed to account for the variety of direct and indirect pathways that habitat diversity influences prey resource diversity and secondary production. Therefore, we used structural equation models [SEM, @grace; @shipley] to examine the multiple causal pathways (Fig. 1) while accounting for the correlation between the multiple variables. We hypothesized habitat diversity, measured by Shannon-Weiner entropy, would influence both the Models were fit using the `lavaan` package [ver. 0.6-15, @rosseel2012]. 
+## SEM methods 
 
+We proposed habitat diversity would modulate food web interaction strengths through its effects on prey resource diversity and production. To quantify this effect, as well as the relative importance of prey diversity and production on interaction strengths, we needed to account for the variety of direct and indirect pathways that habitat diversity influences prey resource diversity and secondary production. To do so, we used structural equation models [SEM, @grace2006; @shipley2016] to examine the multiple causal pathways (Fig. 1) while accounting for the correlation between the multiple variables. We hypothesized median interaction strength would be directly controlled by prey community biodiversity (*bioH*) and production. These two prey community variables are predicted to have direct relationships to each other (*bioH* -> secondary production) and are modified by aspects of habitat. We tested two habitat variables, 1) habitat diversity (*habH*), measured by Shannon-Wiener entropy, and 2) median sediment size that also exhibit predicted inter-relationships ( *habH* -> median sediment size). We fit models with singular dimensions of biodiversity that capture different aspects of the prey community (i.e., species richness, Shannon-Wiener entropy [*H*], and Simpson's concentration [*D*]), as well as a model with biodiversity treated as a latent variable of all three metrics. In the latent biodiversity model, all individual biodiversity indices were centered and rescaled. Secondary production was divided by 1000 to rescale variances and  *log~10~*-transformed to meet assumptions of linearity. Models were fit using the `lavaan` package [ver. 0.6-15, @rosseel2012]. Standardized regression coefficients were estimated to account for the different scales of measurements and to quantify the relative importance of drivers on food web interaction strength. Full details on individual SEMs of single biodiversity dimensions are found in the Supporting Materials. We discuss the results from the model treating biodiversity as a latent variable. Despite the reduction in fit quality based on some metrics, the latent model showed qualitative agreement with the majority of individual biodiversity index models (Supporting Materials: Appendix XXX).
 
 ```{r standard table}
-knitr::kable(standardizedsolution(fit_sem_bioH_scaled), digits = 3)
+fit_sem_bioH_stand %>% 
+  dplyr::filter(op == '~') %>% 
+  dplyr::select(lhs, rhs, est.std, ci.lower, ci.upper) %>% 
+  dplyr::mutate(lhs = recode(lhs, !!!list('is_scaled' = 'IS', 'log_prod' = 'log10 producition'))) %>% 
+knitr::kable(., digits = 3)
 
 ```
+
+## Results
+
+Prey community diversity and production were both important mediators for the reduction of interaction strengths with increasing habitat diversity and sediment size (Fig. XX). The structural equation model of these connections showed higher production and biodiversity both led to lower interaction strengths with slightly higher standardized coefficients for *log~10~*-transformed prey secondary production (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'ci.upper' ],3)`, 95% CI) compared to the direct effect of biodiversity (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.upper' ],3)`). Secondary production was positively influenced by habitat diversity directly (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'ci.lower' ],3)`--`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'ci.upper' ],3)`), as well as indirectly as mediated by the influence of habitat diversity on biodiversity (habH -> bioH = `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'ci.lower' ],3)`--`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'ci.upper' ],3)`; bioH -> *log~10~* production =  `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.upper' ],3)`; indirect effect = `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'est.std' ]*fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'est.std' ],3)`).
 
 # References
 
 <div id="refs"></div>
+
+# Appendix
+
+```{r model fits}
+# modificationindices(fit_sem_bioH_simple)
+
+```
+
