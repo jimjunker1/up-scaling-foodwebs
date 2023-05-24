@@ -1,0 +1,433 @@
+---
+title: "Appendix SX: Supporting Materials"
+author: 
+output:
+   word_document:
+      reference_docx: working_docx_template.docx
+      toc: no
+      pandoc_args:
+      - '--lua-filter=scholarly-metadata.lua'
+      - '--lua-filter=author-info-blocks.lua'
+      - '--filter=pandoc-crossref.exe'
+   pdf_document:
+     keep_tex: true
+   html_document: default
+   pandoc_args:
+      - '--lua-filter=scholarly-metadata.lua'
+      - '--lua-filter=author-info-blocks.lua'
+      - '--filter=pandoc-crossref.exe'
+header-includes:
+- \usepackage{lineno}
+- \usepackage{amsmath}
+- \numberwithin{equation}
+- \usepackage{indentfirst}
+- \linenumbers
+indent: true
+linestretch: 1
+bibliography: refs.bib
+link-citations: no
+link-color: grey
+csl: ecology.csl
+---
+
+```{r import general objects, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# read in the path analysis model syntax
+# source("habitat-model-specs.R")
+library(knitr)
+library(tidyverse)
+library(lavaan)
+library(MASS)
+library(tidySEM)
+library(kableExtra)
+library(flextable)
+## load the data ----
+dat = read.csv("./data/divers_prod_hab.csv") %>% 
+  dplyr::mutate(production_sum_mean = (production_sum_mean/1000),
+                seg_weighted_size = (seg_weighted_size/10),
+                log_prod = log10(production_sum_mean),
+                is10 = median_nolog*10) %>% 
+  dplyr::rename(prod = 'production_sum_mean', habH = 'shannon_habitat',
+                bioH_richness = 'RICHNESS', bioH_shannon = 'SHANNON_B',
+                bioH_simpson = 'SIMPSON_B', bioH_evenness = 'EVENNESS_B', is = 'median_nolog', sediment_size = 'seg_weighted_size') %>% 
+  # scale the variables because production is on a vastly different scale than rest
+  dplyr::mutate(across(c(prod, habH, bioH_richness, bioH_shannon, bioH_simpson, bioH_evenness, sediment_size, is), ~as.numeric(scale(.x)), .names = "{.col}_scaled")) %>%
+  dplyr::mutate(d0 = bioH_richness,
+                d1 = exp(bioH_shannon),
+                d2 = 1/bioH_simpson) %>% 
+  dplyr::select(log_prod, prod, prod_scaled, habH,habH_scaled, bioH_richness, bioH_richness_scaled, bioH_shannon, bioH_shannon_scaled, bioH_simpson, bioH_simpson_scaled, bioH_evenness, bioH_evenness_scaled,sediment_size, sediment_size_scaled, is, is10, is_scaled, d0, d1, d2)
+
+
+# SEMs ----
+# fit with full path analysis/sems
+## shannon
+model_sem_shannon <-'
+# the full model of interaction strengths
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
+
+is_scaled ~ log_prod + bioH_shannon
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH_shannon + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH_shannon ~ habH + sediment_size
+
+sediment_size ~ habH
+'
+fit_sem_bioH_shannon <- sem(model_sem_shannon, data = dat, auto.var = TRUE)
+fit_sem_bioH_shannon_summ = summary(fit_sem_bioH_shannon,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_shannon_stand = standardizedsolution(fit_sem_bioH_shannon)
+## richness
+model_sem_richness <-'
+# the full model of interaction strengths
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
+
+is_scaled ~ log_prod + bioH_richness
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH_richness + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH_richness ~ habH + sediment_size
+
+sediment_size ~ habH
+'
+fit_sem_bioH_richness <- sem(model_sem_richness, data = dat, auto.var = TRUE)
+fit_sem_bioH_richness_summ = summary(fit_sem_bioH_richness,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_richness_stand = standardizedsolution(fit_sem_bioH_richness)
+## simpson
+model_sem_simpson <-'
+# the full model of interaction strengths
+# is10 is IS * 10 to get variance on similar scales influenced by production and diversity
+
+is_scaled ~ log_prod + bioH_simpson
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ habH + bioH_simpson + sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH_simpson ~ habH + sediment_size
+
+sediment_size ~ habH
+'
+fit_sem_bioH_simpson <- sem(model_sem_simpson, data = dat, auto.var = TRUE)
+fit_sem_bioH_simpson_summ = summary(fit_sem_bioH_simpson,fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+fit_sem_bioH_simpson_stand = standardizedsolution(fit_sem_bioH_simpson)
+## latent variable for biodiversity
+model_latentBio_simple <-'
+# the full model of interaction strengths
+# is_scaled is_scaled influenced by production and diversity
+
+is_scaled ~ g*log_prod + h*bioH
+
+# here prod itself has dependence on habitat Diversity
+# and biodiversity
+
+log_prod ~ b * habH + f* bioH + d * sediment_size
+
+# OTOH, biodiversity is_scaled influenced by habitat Diversity and sediment size
+
+bioH ~ c*habH + e*sediment_size
+
+sediment_size ~ a*habH
+
+## identify the latent variables
+
+bioH =~ bioH_shannon_scaled + bioH_richness_scaled + bioH_simpson_scaled
+
+## covariances
+bioH_shannon_scaled ~~ bioH_richness_scaled
+# bioH_shannon_scaled ~~ bioH_simpson_scaled
+bioH_richness_scaled ~~ bioH_simpson_scaled
+
+# calculating the effects of habitat diversity through production
+habH_prodTE := (b*g)+(c*f*g)+(a*d*g)+(a*e*f*g)
+# calculating the effects of habitat diversity through biodiversity
+habH_bioTE := (c*h)+(a*e*h)
+# calculating the total effect of habitat diversity mediated through both production and biodiversity
+habH_TE := (b*g)+(c*f*g)+(a*d*g)+(a*e*f*g)+(c*h)+(a*e*h)
+
+'
+fit_sem_bioH_simple <- sem(model_latentBio_simple, data = dat, auto.var = TRUE)
+
+fit_sem_summ = summary(fit_sem_bioH_simple, fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
+
+fit_sem_bioH_stand = standardizedsolution(fit_sem_bioH_simple)
+```
+<!--- Title page details --->
+## SEM background and methods
+
+We proposed habitat diversity would modulate food web interaction strengths through its effects on prey resource diversity and production (Fig. S1, **add in figure of just the structural model without any weights??**). To quantify this effect, as well as the relative importance of prey diversity and production on interaction strengths, we needed to account for the variety of direct and indirect pathways that habitat diversity influences prey resource diversity and secondary production. To do so, we used structural equation models [SEM, @grace2006; @shipley2016] to examine the multiple causal pathways  while accounting for the correlation between the multiple variables. We hypothesized median interaction strength would be directly controlled by prey community biodiversity (*bioH*) and production. These two prey community variables are predicted to have direct relationships to each other (*bioH* $\rightarrow$ secondary production) and are modified by aspects of habitat. We tested two habitat variables, 1) habitat diversity (*habH*), measured by Shannon-Wiener entropy, and 2) median sediment size that also exhibit predicted inter-relationships ( *habH* $\rightarrow$ median sediment size). We fit models with singular dimensions of biodiversity that capture different aspects of the prey community (i.e., species richness, Shannon-Wiener entropy [*H*], and Simpson's concentration [*D*]), as well as a model with biodiversity treated as a latent variable of all three metrics. In the latent biodiversity model, all individual biodiversity indices were centered and rescaled. Secondary production was converted to g m^-2^ y^-1^ by dividing by 1000 to rescale variances and  *log~10~*-transformed to meet assumptions of linearity. Models were fit using the `lavaan` package [ver. 0.6-15, @rosseel2012]. Standardized regression coefficients were estimated to account for the different scales of measurements and to quantify the relative importance of drivers on food web interaction strength.
+
+We estimated a number of goodness of fit statistics to assess the fit of the modeled variance-covariance matrix to the data, specifically we report the $\chi^{2}$-statistic, model degrees of freedom (df), the root mean square error of approximation (RMSE), the standardized root mean square residual (RMSR), the comparative fit index (CFI), the adjusted goodness of fit (AGFI), model log-likelihood (logLik), and Akaike's information criterion (AIC) for individual dimensions of prey biodiversity (i.e., richness, Shannon-Wiener H', Simpson D) and biodiversity latent model (Bio-Latent). 
+
+```{r sem comparisons}
+
+modelName_table = c("Richness",
+                    "Shannon-Wiener H'",
+                    "Simpson D",
+                    "Bio-Latent")
+
+df_table = c(table_fit(fit_sem_bioH_richness)$df,
+             table_fit(fit_sem_bioH_shannon)$df,
+              table_fit(fit_sem_bioH_simpson)$df,
+              table_fit(fit_sem_bioH_simple)$df)
+
+chisq_table = c(table_fit(fit_sem_bioH_richness)$chisq,
+              table_fit(fit_sem_bioH_shannon)$chisq,
+              table_fit(fit_sem_bioH_simpson)$chisq,
+              table_fit(fit_sem_bioH_simple)$chisq) %>% 
+  round(2)
+
+aic_table = AIC(fit_sem_bioH_richness,
+                fit_sem_bioH_shannon,
+                fit_sem_bioH_simpson,
+                fit_sem_bioH_simple) %>%
+  dplyr::select(AIC) %>%  unlist %>% round(2)
+
+logLik_table = c(logLik(fit_sem_bioH_richness),
+                 logLik(fit_sem_bioH_shannon),
+                 logLik(fit_sem_bioH_simpson),
+                 logLik(fit_sem_bioH_simple)) %>% round(2)
+
+rmse_table = c(table_fit(fit_sem_bioH_richness)$rmsea,
+              table_fit(fit_sem_bioH_shannon)$rmsea,
+              table_fit(fit_sem_bioH_simpson)$rmsea,
+              table_fit(fit_sem_bioH_simple)$rmsea) %>% round(2)
+
+srmr_table = c(table_fit(fit_sem_bioH_richness)$srmr,
+              table_fit(fit_sem_bioH_shannon)$srmr,
+              table_fit(fit_sem_bioH_simpson)$srmr,
+              table_fit(fit_sem_bioH_simple)$srmr) %>% round(3)
+
+cfi_table = c(table_fit(fit_sem_bioH_richness)$cfi,
+              table_fit(fit_sem_bioH_shannon)$cfi,
+              table_fit(fit_sem_bioH_simpson)$cfi,
+              table_fit(fit_sem_bioH_simple)$cfi) %>% round(2)
+
+agfi_table = c(table_fit(fit_sem_bioH_richness)$agfi,
+              table_fit(fit_sem_bioH_shannon)$agfi,
+              table_fit(fit_sem_bioH_simpson)$agfi,
+              table_fit(fit_sem_bioH_simple)$agfi) %>% round(2)
+
+
+comp_table = data.frame(`model name` = modelName_table,
+                        df = df_table,
+                        `Chi square` = chisq_table,
+                        RMSE = rmse_table,
+                        SRMR = srmr_table,
+                        CFI = cfi_table,
+                        AGFI = agfi_table,
+                        `log-Likelihood` = logLik_table,
+                        AIC = aic_table, check.names = FALSE)
+
+```
+
+## Results
+
+### Model fits and comparisons
+
+Prey community diversity and production were both important mediators for the reduction of interaction strengths with increasing habitat diversity and sediment size (Figs. S2--SX; Tab. SX). Generally, models showed higher production and biodiversity both led to lower interaction strengths. Individual biodiversity models generally had moderate to good fits to the observed variance-covariance matrix (CFI range: 0.83--0.96), while the latent variable model showed slightly reduced fit in comparison (CFI = 0.76 and SRMR = 0.175; Table S1).
+
+\newpage
+
+```{r comparison table, tab.width = 0.7, tab.cap = "Table S1. Model fit metrics for all SEMs.", ft.align = "center"}
+comp_ft = flextable(comp_table) %>% 
+  font(fontname = 'Times New Roman', part = 'all') %>% 
+  footnote(i = 1, j = c(2,4:7,9), part = "header",
+  ref_symbols = c("a","b","c","d","e","f"),
+  value = as_paragraph(c("df = degrees of freedom",
+                         "RMSE = root mean square error of approximation",
+                         "SRMR = standardized root mean residual",
+                         "CFI = comparative fit index",
+                         "AGFI = adjusted goodness of fit",
+                         "AIC = Akaike's information criterion")), inline = TRUE) %>% 
+  mk_par(i = 1, j = 3, part = 'header', value = as_paragraph("\U1D6D8",as_sup("2"),"-statistic"))
+comp_ft_pretty = dim_pretty(comp_ft)
+comp_ft %>% 
+  width(j = 1:9, comp_ft_pretty$widths[1:9]) %>% 
+  fontsize(part = "footer", size = 9)
+```
+
+### SEMs with single dimensions of biodiversity
+
+SEMs of singular biodiversity metrics were all qualitatively similar in that prey production and biodiversity, represented by species richness, Shannon-Wiener *H'*, or Simpson's concentration *D*, both showed clearly negative relationships with median interaction strength, *IS_scaled_* (Tables S2--S4). Prey secondary production was clearly positively influenced directly by habitat diversity for all metrics. In all cases, prey biodiversity was positively associated with sediment size. Other relationships were more equivocal across the biodiversity metrics, though clearer interpretations were possible when coefficients were standardized for each model (Tables S5--S7). 
+
+```{r richness raw, tab.width = 0.7, tab.cap = "Table S2. Raw coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by species richness.", ft.align = "center"}
+raw_richness_table = flextable(fit_sem_bioH_richness_summ %>% pluck('pe') %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est,se,z,pvalue) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`)) %>% dplyr::select(-lowP))%>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("richness"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("richness"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("richness")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("richness")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+raw_richness_pretty = dim_pretty(raw_richness_table)
+raw_richness_table%>% 
+  width(j = 1:5, raw_richness_pretty$widths[1:5]) %>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+\  
+
+```{r shannon, tab.width = 0.7, tab.cap = "Table S3.Raw coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by Shannon-Wiener entropy (H').", ft.align = "center"}
+raw_shannon_table = flextable(fit_sem_bioH_shannon_summ %>% pluck('pe') %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est,se,z,pvalue) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`))%>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("shannon"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("shannon"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("shannon")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("shannon")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+raw_shannon_pretty = dim_pretty(raw_shannon_table)
+raw_shannon_table%>% 
+  width(j = 1:5, raw_shannon_pretty$widths[1:5])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+\ 
+
+```{r simpson, tab.width = 0.7, tab.cap = "Table S4. Raw coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by Simpson's concentration index (D).", ft.align = "center"}
+raw_simpson_table = flextable(fit_sem_bioH_simpson_summ %>% pluck('pe') %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est,se,z,pvalue) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`))%>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("simpson"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("simpson"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("simpson")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("simpson")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+raw_simpson_pretty = dim_pretty(raw_simpson_table)
+raw_simpson_table%>% 
+  width(j = 1:5, raw_simpson_pretty$widths[1:5])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+Standardized solutions confirmed the qualitative inferences from uncorrected model coefficients and also suggested further insights into the causal connections between habitat, prey communities, and food web interaction strengths (Tables S5 -- S7). First, standardized models all revealed a surprising *negative* effect of biodiversity on prey production. This effect was most pronounced for species richness (-0.071, -0.140 -- -0.001 95% confidence interval; Table S5), but weaker for for Shannon-Wiener *H'* (-0.069, -0.163 -- 0.026; Table S6) and Simpson's *D* (-0.007, -0.095 -- 0.081; Table S7). Prey production was also weakly influenced by sediment size in all models. Again, prey community diversity was most strongly related to sediment size and the relationship with habitat diversity *per se* was variable in direction and magnitude depending on the dimension of biodiversity of interest (standardized coefficients: -0.197 -- 0.636, Tables S5--S7). Lastly, sediment size was moderately influenced by habitat diversity, though considerable unexplained residual variation was present in all cases (e.g., low variable *R^2^* estimates; Table S10).
+
+Standardized models provided variable evidence on the relative importance of prey production versus prey biodiversity in mediating food web interaction strengths. Prey species richness was approximately equally as important as prey production in reducing interaction strengths (-0.56 [-0.65 -- -0.47] vs -0.47 [-0.565 -- -0.379], Table S5). In contrast, Shannon-Wiener and Simpson's indices of biodiversity both suggested to be a slightly more important factor in decreasing interaction strengths with an estimated 13% (-0.626/-0.556, Simpson's) and 61% (-0.841/-0.521, Shannon-Wiener) higher relative importance of prey production (Tables S6 & S7). 
+
+```{r richness stand, tab.width = 0.7, tab.cap = "Table S5. Standardized coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by species richness.", ft.align = "center"}
+stand_richness_table = flextable(fit_sem_bioH_richness_stand %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est.std,se,z,pvalue,ci.lower,ci.upper) %>% tidyr::unite('Formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est.std', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue', lower = 'ci.lower', upper = 'ci.upper') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`)) %>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("richness"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("richness"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("richness")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("richness")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+stand_richness_pretty = dim_pretty(stand_richness_table)
+stand_richness_table%>% 
+  width(j = 1:7, stand_richness_pretty$widths[1:7])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+\ 
+
+```{r shannon stand, tab.width = 0.7, tab.cap = "Table S6. Standardized coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by Shannon-Wiener entropy (H').", ft.align = "center"}
+stand_shannon_table = flextable(fit_sem_bioH_shannon_stand %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est.std,se,z,pvalue,ci.lower,ci.upper) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est.std', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue', lower = 'ci.lower', upper = 'ci.upper') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`)) %>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("shannon"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("shannon"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("shannon")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("shannon")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+stand_shannon_pretty = dim_pretty(stand_shannon_table)
+stand_shannon_table%>% 
+  width(j = 1:7, stand_shannon_pretty$widths[1:7])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+\ 
+
+```{r simpson stand, tab.width = 0.7, tab.cap = "Table S7. Standardized coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. A single dimension of prey biodiversity is represented by Simpson's concentration index (D).", ft.align = "center"}
+stand_simpson_table = flextable(fit_sem_bioH_simpson_stand %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est.std,se,z,pvalue,ci.lower,ci.upper) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est.std', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue', lower = 'ci.lower', upper = 'ci.upper') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`)) %>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("simpson"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("simpson"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("simpson")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("simpson")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+stand_simpson_pretty = dim_pretty(stand_simpson_table)
+stand_simpson_table%>% 
+  width(j = 1:7, stand_simpson_pretty$widths[1:7])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+## Multiple dimensions of prey biodiversity: biodiversity as latent variable
+
+Biodiversity as a concept is multidimensional [@chase2018] and as such single metrics only capture imperfect aspects of how "biodiversity" can influence and be influenced by ecosystem dynamics. To account for this, we constructed a SEM which combined three measures of biodiversity: species richness, Shannon-Wiener entropy, and Simpson's concentration into a latent biodiversity variable and fit this to the data with a similar hypothesized causal structure as singular dimensions of biodiversity (Fig. S1). This more complex model exhibited a slightly poorer fit to the observed variance-covariance within the data (CFI = 0.76, Table S1). Despite this reduced goodness of fit, this model showed qualitative similarities with individual biodiversity dimensions (Table S8 & Table S9). The SEM of these connections showed higher production and biodiversity both led to lower interaction strengths with slightly higher standardized coefficients for *log~10~*-transformed prey secondary production (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'log_prod'),'ci.upper' ],3)`, 95% CI) compared to the direct effect of biodiversity (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'is_scaled' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.upper' ],3)`). Secondary production was positively influenced by habitat diversity directly (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'ci.lower' ],3)`--`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'habH'),'ci.upper' ],3)`), as well as indirectly as mediated by the influence of habitat diversity on biodiversity (habH $\rightarrow$ bioH = `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'habH'),'ci.upper' ],3)`; bioH $\rightarrow$ *log~10~* production =  `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'bioH'),'ci.upper' ],3)`). Further, sediment size had a small direct effect on production (sediment $\rightarrow$ *log~10~* production =  `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'sediment_size'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'sediment_size'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'log_prod' & fit_sem_bioH_stand$rhs == 'sediment_size'),'ci.upper' ],3)`). Biodiversity, in addition to being directly influenced by habitat diversity, was also directly influenced by sediment size (sediment size $\rightarrow$ bioH = `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'sediment_size'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'sediment_size'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'bioH' & fit_sem_bioH_stand$rhs == 'sediment_size'),'ci.upper' ],3)`). 
+
+```{r latent, tab.width = 0.7, tab.cap = "Table S8. Raw coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. Prey biodiversity is represented by a latent variable encompasing species richness, Shannon-Wiener H', and Simpson's concentration D.", ft.align = "center"}
+raw_latent_table = flextable(fit_sem_summ %>% pluck('pe') %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est,se,z,pvalue) %>% tidyr::unite('formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`))%>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("latent"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("latent"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("latent")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("latent")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+raw_latent_pretty = dim_pretty(raw_latent_table)
+raw_latent_table%>% 
+  width(j = 1:5, raw_latent_pretty$widths[1:5])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+Taken together, this model lays out complex dynamics in how habitat diversity both directly and indirectly modifies interaction strengths in the food web. We calculated these effects with a focus on two key mediators of interest: prey production and biodiversity. We estimated habitat diversity had a total effect on median food web interaction strength of `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$label == 'habH_TE'),'est.std' ],3)` (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_TE'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_TE'),'ci.upper' ],3)`). These total effects were partitioned through total direct and indirect effects operating through prey production (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$label == 'habH_prodTE'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_prodTE'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_prodTE'),'ci.upper' ],3)`) and those operating through prey biodiversity (`r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$label == 'habH_bioTE'),'est.std' ],3)`, `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_bioTE'),'ci.lower' ],3)` -- `r round(fit_sem_bioH_stand[which(fit_sem_bioH_stand$lhs == 'habH_bioTE'),'ci.upper' ],3)`).  
+
+```{r latent stand, tab.width = 0.7, tab.cap = "Table S9. Standardized coefficient estimates for the structural equation model of habitat diversity effects on median food web interaction strengths. Prey biodiversity is represented by a latent variable encompasing species richness, Shannon-Wiener H', and Simpson's concentration D.", ft.align = "center"}
+stand_latent_table = flextable(fit_sem_bioH_stand %>% dplyr::filter(op == '~') %>% dplyr::select(lhs,op,rhs,est.std,se,z,pvalue,ci.lower,ci.upper) %>% tidyr::unite('Formula',lhs,op,rhs, sep = "") %>% dplyr::rename(estimate = 'est.std', SE = 'se', `z-value` = 'z', `p-value` = 'pvalue', lower = 'ci.lower', upper = 'ci.upper') %>%   dplyr::mutate(across(where(is.numeric), ~round(.x, 3))) %>% dplyr::mutate(lowP = ifelse(`p-value` < 0.001,TRUE,FALSE),`p-value` = as.character(`p-value`), `p-value` = case_when(lowP ~ '<0.001', TRUE ~ `p-value`)) %>% dplyr::select(-lowP)) %>% 
+  mk_par(i = 1, j = 4, part = 'header', value = as_paragraph(as_i('z'),'-value')) %>% 
+  mk_par(i = 1, j = 5, part = 'header', value = as_paragraph(as_i('p'),'-value')) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 2,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled")," ~ ",as_i("bioH"),as_sub("latent"))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ ",as_i("bioH"),as_sub("latent"))) %>%
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production ~ sediment size")) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("bioH"),as_sub("latent")," ~ ",as_i("habH"),as_sub("shannon"))) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph(as_i("bioH"),as_sub("latent")," ~ sediment size")) %>%
+  mk_par(i = 8, j = 1, value = as_paragraph("sediment size ~ ",as_i("habH"),as_sub("shannon")))
+stand_latent_pretty = dim_pretty(stand_latent_table)
+stand_latent_table%>% 
+  width(j = 1:7, stand_latent_pretty$widths[1:7])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
+
+
+
+
+# References
+
+<div id="refs"></div>
