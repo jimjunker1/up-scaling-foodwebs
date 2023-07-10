@@ -425,8 +425,23 @@ stand_latent_table%>%
   font(fontname = 'Times New Roman', part = 'all')
 ```
 
-
-
+```{r R2 table, tab.width = 0.7, tab.cap = "Table S10. R-square values of all endogenous variables. Values represent total model-wide variation explained for each variable. ", ft.align = "center"}
+latentR2 = inspect(fit_sem_bioH_simple, 'rsquare')
+latent_R2_table = flextable(data.frame(variable = c("is","biodiversity","richness", "shannon-Wiener","simpson","production", "sediment size"),
+                                        r2 = latentR2[c("is_scaled","bioH","bioH_richness_scaled","bioH_shannon_scaled","bioH_simpson_scaled","log_prod","sediment_size")] %>% round(2))) %>% 
+  mk_par(i = 1, j = 2, part = 'header', value = as_paragraph(as_i('R'),as_i(as_sup('2')))) %>% 
+  mk_par(i = 1,j = 1, value = as_paragraph(as_i("IS"),as_sub("scaled"))) %>% 
+  mk_par(i = 2, j = 1, value = as_paragraph(as_i(as_b("Biodiversity")))) %>% 
+  mk_par(i = 3, j = 1, value = as_paragraph(as_i("  Biodiversity"),as_i(as_sub("Richness")))) %>% 
+  mk_par(i = 4, j = 1, value = as_paragraph(as_i("  Biodiversity"),as_i(as_sub("Shannon-Wiener")))) %>% 
+  mk_par(i = 5, j = 1, value = as_paragraph(as_i("  Biodiversity"),as_i(as_sub("Simpson")))) %>% 
+  mk_par(i = 6, j = 1, value = as_paragraph(as_i("log"),as_sub("10")," production")) %>% 
+  mk_par(i = 7, j = 1, value = as_paragraph("Sediment size"))
+latent_R2__pretty = dim_pretty(latent_R2_table)
+latent_R2_table%>% 
+  width(j = 1:2, latent_R2__pretty$widths[1:2])%>% 
+  font(fontname = 'Times New Roman', part = 'all')
+```
 
 # References
 
